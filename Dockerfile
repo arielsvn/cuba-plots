@@ -13,6 +13,4 @@ RUN apt-get update -qq && apt-get -y --no-install-recommends install \
     geosphere \
     gridExtra
 
-RUN install2.r --error \
-    --deps TRUE \
-    maps
+RUN R -e "install.packages('maps')"

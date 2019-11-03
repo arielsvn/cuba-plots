@@ -5,11 +5,11 @@ output:
     toc: false
 ---
 
+Back [Home](http://arielrodriguezromero.com/cuba-plots/)
+
 # Setup
 
-First load all the
-
-```{r}
+```{r, warning=FALSE,message=FALSE}
 library(rjson)
 library(dplyr)
 library(readr)
@@ -17,11 +17,13 @@ library(purrr)
 library(ggplot2)
 library(geosphere)
 library(gridExtra)
+library(maps)
+library(data.table)
 ```
 
-Load current flights from Google Flights, got all the data on Nov 2nd. for the last week of nov 24th to 30th
+The data comes from Google Flights. On Nov 2nd, 2019 I collected all direct flights destinations for each day between Nov 24th and Nov 30th, for each major airport: Havana, Varadero, Santa Clara, Camaguey, Holguin and Santiago de Cuba. Also, wrote a [blog post](http://arielrodriguezromero.com/blog/get-route-information-google-flights-2019.html) on how I got the data.
 
-```{r echo=FALSE, suppressWarnings=TRUE}
+```{r, warning=FALSE, message=FALSE}
 json_data <- fromJSON(file = "DATA/flight-data.json")
 
 # Convert json file into dataframe
@@ -40,11 +42,10 @@ data = suppressWarnings(json_data %>% imap(function(airport, airport_code) {
 }) %>% bind_rows)
 ```
 
-We also have airport information location from the open flights datasets
+We also have airport information location from the [open flights](https://openflights.org/data.html) datasets.
 
-```{r}
-library(data.table)
-download.file("https://raw.githubusercontent.com/jpatokal/openflights/master/data/airports.dat", destfile = "DATA/airports.dat", mode = "wb")
+```{r, warning=FALSE,message=FALSE}
+# download.file("https://raw.githubusercontent.com/jpatokal/openflights/master/data/airports.dat", destfile = "DATA/airports.dat", mode = "wb")
 airport_codes <- fread("DATA/airports.dat", sep = ",")
 colnames(airport_codes) <- c("airport_id", "name", "city", "country", "iata", "icao", "latitude", "longitude",  "altitude", "timezone", "dst", "tz_database_time_zone", "type", "source")
 
@@ -66,7 +67,7 @@ data = data %>%
   left_join((airport_codes %>% select(code, lat, lon) %>% rename(cu_lat=lat, cu_lon=lon)), by=(c('cu_code'='code')))
 ```
 
-Now merge the data
+Define utility functions, since the goal is to render a graph for each airport.
 
 ```{r}
 data_for_connection=function( dep_lon, dep_lat, arr_lon, arr_lat, group){
@@ -94,13 +95,10 @@ data_for_plot = function(data, airport_code) {
 }
 ```
 
-## make the plot
-
-Load world data
+## The plot
 
 ```{r}
-world_data = map_data("world") %>%
-  filter(region != "Antarctica")
+world_data = map_data("world") %>% filter(region != "Antarctica")
 
 map_theme = theme(panel.background = element_rect(fill = "#000000", colour = "#05050f"),
         panel.grid.major = element_blank(),
@@ -121,24 +119,25 @@ maps = data$cu_code %>% unique %>%
       geom_polygon(fill='#262537', colour='#1B1B28') +
       coord_fixed() +
       geom_line(data=data_ready_plot, size=0.4, alpha=0.4, aes(x=lon, y=lat, group=group, colour=cancel)) +
-      annotate("text", x = -150, y = -44, hjust = 0, size =18, label = paste(city_names[[current_code]]), color = "white") +
+      annotate("text", x = -150, y = -44, hjust = 0, size= 4, label = paste(city_names[[current_code]]), color = "white") +
       scale_color_manual(values = c('#ffffb2', 'red')) +
       xlim(-150, 70) + ylim(-55, 80) +
       map_theme
   })
 
 png(bg = "#000000")
-g = grid.arrange(maps[[1]], maps[[2]], maps[[5]], maps[[3]], maps[[6]], maps[[4]], ncol = 2, padding=0)
+grid.arrange(maps[[1]], maps[[2]], maps[[5]], maps[[3]], maps[[6]], maps[[4]], ncol = 2, padding=0)
 ```
 
 Save the plots
 
 ```{r}
-ggsave("IMG/cuba-flights.png", width = 24, height = 24*405/440, units = "in", dpi = 100, g)
+ggsave("IMG/cuba-flights.png", width = 24, height = 24*405/440, units = "in", dpi = 100)
 ```
 
 ### Inspiration
 
--
+I took inspiration from several sources to generate these.
 
-- https://lucidmanager.org/create-air-travel-route-maps/
+- The color scheme came from NASA's world photo. https://earthobservatory.nasa.gov/images/79765/night-lights-2012-map
+- This article gave me the initial idea. https://lucidmanager.org/create-air-travel-route-maps/

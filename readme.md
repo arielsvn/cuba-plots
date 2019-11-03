@@ -1,6 +1,9 @@
-# This contains several R plots I created with data related to Cuba
+This is a collection of notebooks with different analysis of data that I have found related to Cuba.
 
-- [Outgoing flights]()
+# Notebooks
+
+- [Outgoing flights from top airports](http://arielrodriguezromero.com/cuba-plots/00-outgoing-flights.nb.html)
+  ![flights from Cuba](/IMG/cuba-flights.png)
 
 # Running locally
 

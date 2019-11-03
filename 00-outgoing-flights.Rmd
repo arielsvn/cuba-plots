@@ -1,0 +1,144 @@
+---
+title: 'Flights out of Cuba'
+output:
+  html_notebook:
+    toc: false
+---
+
+# Setup
+
+First load all the
+
+```{r}
+library(rjson)
+library(dplyr)
+library(readr)
+library(purrr)
+library(ggplot2)
+library(geosphere)
+library(gridExtra)
+```
+
+Load current flights from Google Flights, got all the data on Nov 2nd. for the last week of nov 24th to 30th
+
+```{r echo=FALSE, suppressWarnings=TRUE}
+json_data <- fromJSON(file = "DATA/flight-data.json")
+
+# Convert json file into dataframe
+data = suppressWarnings(json_data %>% imap(function(airport, airport_code) {
+  airport %>% imap(function(day, day_name) {
+      day %>% lapply(function(x) {
+          as.data.frame(list(
+            price=ifelse(is.null(x$price) || x$price == '', NA, x$price),
+            duration=ifelse(is.null(x$duration), NA, x$duration),
+            city=ifelse(is.null(x$destination), NA, x$destination),
+            day=day_name,
+            cu_code=airport_code
+          ))
+        }) %>% bind_rows
+  }) %>% bind_rows
+}) %>% bind_rows)
+```
+
+We also have airport information location from the open flights datasets
+
+```{r}
+library(data.table)
+download.file("https://raw.githubusercontent.com/jpatokal/openflights/master/data/airports.dat", destfile = "DATA/airports.dat", mode = "wb")
+airport_codes <- fread("DATA/airports.dat", sep = ",")
+colnames(airport_codes) <- c("airport_id", "name", "city", "country", "iata", "icao", "latitude", "longitude",  "altitude", "timezone", "dst", "tz_database_time_zone", "type", "source")
+
+# Simplify the dataset
+airport_codes = airport_codes[, c(3, 4, 5, 7, 8)]
+names(airport_codes) = c("city", "country", 'code', 'lat', 'lon')
+
+airport_codes_mappings = airport_codes %>%
+  select(city, code) %>%
+  group_by(city) %>%
+  filter(substr(code, 1, 1) != '\\') %>%
+  top_n(1) %>%
+  bind_rows(read_csv('DATA/airport-code-mapping.csv'))
+
+data = data %>%
+  left_join(airport_codes_mappings) %>%
+  select(day, cu_code, code) %>%
+  left_join(airport_codes) %>%
+  left_join((airport_codes %>% select(code, lat, lon) %>% rename(cu_lat=lat, cu_lon=lon)), by=(c('cu_code'='code')))
+```
+
+Now merge the data
+
+```{r}
+data_for_connection=function( dep_lon, dep_lat, arr_lon, arr_lat, group){
+  inter <- gcIntermediate(c(dep_lon, dep_lat), c(arr_lon, arr_lat), n=50, addStartEnd=TRUE, breakAtDateLine=F)
+  inter=data.frame(inter)
+  inter$group=NA
+  diff_of_lon=abs(dep_lon) + abs(arr_lon)
+  if(diff_of_lon > 180){
+    inter$group[which(inter$lon>=0)]=paste(group, "A",sep="")
+    inter$group[which(inter$lon<0)]=paste(group, "B",sep="")
+  } else {
+    inter$group=group
+  }
+  return(inter)
+}
+
+data_for_plot = function(data, airport_code) {
+  data_ready_plot=data.frame()
+  for(i in c(1:nrow(data))){
+    tmp=data_for_connection(data$cu_lon[i], data$cu_lat[i], data$lon[i], data$lat[i] , i)
+    tmp$cancel = ifelse(data$country[i] == 'United States' && data$cu_code != 'HAV', 'yes', 'no')
+    data_ready_plot=rbind(data_ready_plot, tmp)
+  }
+  data_ready_plot
+}
+```
+
+## make the plot
+
+Load world data
+
+```{r}
+world_data = map_data("world") %>%
+  filter(region != "Antarctica")
+
+map_theme = theme(panel.background = element_rect(fill = "#000000", colour = "#05050f"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks.length = unit(0, "cm"),
+        legend.position = "none",
+        plot.margin = unit(c(0,0,0,0), "cm"),
+        plot.background=element_rect(fill = "#000000", colour = "#05050f"))
+
+city_names = list(HAV='Havana', VRA='Varadero', SNU='Santa Clara', CMW='Camaguey', HOG='Holguin', SCU='Santiago de Cuba')
+
+maps = data$cu_code %>% unique %>%
+  lapply(function(current_code) {
+    data_ready_plot = data_for_plot(filter(data, cu_code==current_code), current_code)
+    ggplot(world_data, aes(long, lat, group = paste(region, group))) +
+      geom_polygon(fill='#262537', colour='#1B1B28') +
+      coord_fixed() +
+      geom_line(data=data_ready_plot, size=0.4, alpha=0.4, aes(x=lon, y=lat, group=group, colour=cancel)) +
+      annotate("text", x = -150, y = -44, hjust = 0, size =18, label = paste(city_names[[current_code]]), color = "white") +
+      scale_color_manual(values = c('#ffffb2', 'red')) +
+      xlim(-150, 70) + ylim(-55, 80) +
+      map_theme
+  })
+
+png(bg = "#000000")
+g = grid.arrange(maps[[1]], maps[[2]], maps[[5]], maps[[3]], maps[[6]], maps[[4]], ncol = 2, padding=0)
+```
+
+Save the plots
+
+```{r}
+ggsave("IMG/cuba-flights.png", width = 24, height = 24*405/440, units = "in", dpi = 100, g)
+```
+
+### Inspiration
+
+-
+
+- https://lucidmanager.org/create-air-travel-route-maps/
